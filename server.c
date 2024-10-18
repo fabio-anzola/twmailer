@@ -14,7 +14,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#define BUF 1024
+#define BUF 4096
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -510,6 +510,159 @@ void *clientCommunication(void *data, char *mailSpoolDirectory)
         if (strcmp(buffer, "READ") == 0)
         {
             printf("%s", "Entered READ");
+            // Answer OK
+            if (send(*current_socket, "OK", 3, 0) == -1)
+            {
+                perror("send answer failed");
+                return NULL;
+            }
+
+            // Get User ID
+            size = recv(*current_socket, buffer, BUF - 1, 0);
+            if (!checkError(size))
+            {
+                break;
+            }
+            if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+            {
+                size -= 2;
+            }
+            else if (buffer[size - 1] == '\n')
+            {
+                --size;
+            }
+            buffer[size] = '\0';
+            char *username = strdup(buffer);
+
+            DIR *directory;
+            struct dirent *entry;
+            directory = opendir(mailSpoolDirectory);
+            if (directory == NULL)
+            {
+                perror("Error opening directory");
+            }
+
+            // Check if there is an inbox for the username
+            int foundUsrInbox = 0;
+            while ((entry = readdir(directory)) != NULL)
+            {
+                if (strcmp(username, entry->d_name) == 0)
+                {
+                    foundUsrInbox = 1;
+                    break;
+                }
+            }
+
+            // Close mail spool directory
+            if (closedir(directory) == -1)
+            {
+                printf("%s\n", "Error closing directory");
+            }
+
+            // If no inbox found return ERR else OK
+            if (!foundUsrInbox)
+            {
+                if (send(*current_socket, "ERR", 3, 0) == -1)
+                {
+                    perror("send answer failed");
+                    return NULL;
+                }
+            }
+            else
+            {
+                if (send(*current_socket, "OK", 3, 0) == -1)
+                {
+                    perror("send answer failed");
+                    return NULL;
+                }
+
+                // Get Message ID
+                size = recv(*current_socket, buffer, BUF - 1, 0);
+                if (!checkError(size))
+                {
+                    break;
+                }
+                if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+                {
+                    size -= 2;
+                }
+                else if (buffer[size - 1] == '\n')
+                {
+                    --size;
+                }
+                buffer[size] = '\0';
+                char *messageid = strdup(buffer);
+
+                // Get and read file
+                DIR *directory;
+                struct dirent *entry;
+                char userFolder[PATH_MAX];
+                strcat(userFolder, mailSpoolDirectory);
+                strcat(userFolder, username);
+                strcat(userFolder, "/");
+                // Open inbox folder
+                directory = opendir(userFolder);
+                if (directory == NULL)
+                {
+                    perror("Error opening directory");
+                }
+                // get file with msg nr
+                int currFile = 0;
+                int foundFile = 0;
+                while ((entry = readdir(directory)) != NULL)
+                {
+                    // If not . or ..
+                    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+                    {
+                        currFile += 1;
+                        if (currFile == atoi(messageid))
+                        {
+                            foundFile = 1;
+                            strcat(userFolder, entry->d_name);
+                            break;
+                        }
+                    }
+                }
+                if (closedir(directory) == -1)
+                {
+                    printf("%s\n", "Error closing directory");
+                }
+                if (foundFile)
+                {
+                    // Add OK to beginning of buffer
+                    sprintf(buffer, "%s\n", "OK");
+                    // Read file and add to buffer
+                    FILE *file = fopen(userFolder, "r");
+                    if (file == NULL)
+                    {
+                        printf("%s\n", "Error opening message ");
+                        return NULL;
+                    }
+                    fread(buffer, sizeof(char), BUF, file);
+                    fclose(file);
+
+                    printf("Buffer: %s", buffer);
+
+                    // Send buffer back to client
+                    if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
+                    {
+                        perror("send answer failed");
+                        return NULL;
+                    }
+                }
+                else
+                {
+                    if (send(*current_socket, "ERR", 3, 0) == -1)
+                    {
+                        perror("send answer failed");
+                        return NULL;
+                    }
+                }
+
+                free(messageid);
+            }
+
+            free(username);
         }
 
         if (strcmp(buffer, "DEL") == 0)
@@ -628,7 +781,6 @@ void *clientCommunication(void *data, char *mailSpoolDirectory)
                         }
                     }
                 }
-                printf("File: %s", userFolder);
                 if (remove(userFolder) == 0)
                 {
                     // Remove is successful
