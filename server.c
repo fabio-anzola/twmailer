@@ -74,6 +74,125 @@ void createDir(char *newDir)
     return;
 }
 
+void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
+{
+    // Answer OK
+    if (send(*current_socket, "OK", 3, 0) == -1)
+    {
+        perror("send answer failed");
+        return;
+    }
+
+    // Get User ID
+    int size = recv(*current_socket, buffer, BUF - 1, 0);
+    if (!checkError(size))
+    {
+        return;
+    }
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+    {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n')
+    {
+        --size;
+    }
+    buffer[size] = '\0';
+    char *username = strdup(buffer);
+
+    DIR *directory;
+    struct dirent *entry;
+    directory = opendir(mailSpoolDirectory);
+
+    if (directory == NULL)
+    {
+        perror("Error opening directory");
+    }
+
+    // Check if there is an inbox for the username
+    int foundUsrInbox = 0;
+    while ((entry = readdir(directory)) != NULL)
+    {
+        if (strcmp(username, entry->d_name) == 0)
+        {
+            foundUsrInbox = 1;
+            break;
+        }
+    }
+
+    // Close mail spool directory
+    if (closedir(directory) == -1)
+    {
+        printf("%s\n", "Error closing directory");
+    }
+
+    // If no inbox found return message count 0
+    if (!foundUsrInbox)
+    {
+        if (send(*current_socket, "0", 3, 0) == -1)
+        {
+            perror("send answer failed");
+            return;
+        }
+    }
+    else
+    {
+        // Inbox found
+        DIR *directory;
+        struct dirent *entry;
+        char userFolder[PATH_MAX];
+        strcpy(userFolder, mailSpoolDirectory);
+        strcat(userFolder, "/");
+        strcat(userFolder, buffer);
+
+        directory = opendir(userFolder);
+        if (directory == NULL)
+        {
+            perror("Error opening directory");
+        }
+
+        int foundMessages = 0;
+        char msg[BUF] = {0};
+        printf("Msg before is: %s \n", msg);
+        while ((entry = readdir(directory)) != NULL)
+        {
+            // If not . or ..
+            if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+            {
+                foundMessages += 1;
+                strcat(msg, "\n");
+                strcat(msg, entry->d_name);
+            }
+        }
+        printf("Msg is: %s \n", msg);
+        printf("Buffer before is: %s \n", buffer);
+        printf("Buffersize before is: %lu \n", strlen(buffer));
+        strcat(buffer, "\0");
+        // Add nr of messages to buffer
+        sprintf(buffer, "%d", foundMessages);
+        // Add temp buffer of subject names to buffer
+        strcat(buffer, msg);
+        printf("Buffer is: %s \n", buffer);
+        printf("Buffersize is: %lu \n", strlen(buffer));
+        if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
+        {
+            perror("send answer failed");
+            return;
+        }
+
+        // Close inbox dir
+        if (closedir(directory) == -1)
+        {
+            printf("%s\n", "Error closing directory");
+        }
+    }
+
+    // Free dynamic copy for username
+    free(username);
+}
+
+
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
@@ -398,113 +517,7 @@ void *clientCommunication(void *data, char *mailSpoolDirectory)
         if (strcmp(buffer, "LIST") == 0)
         {
             printf("%s", "Entered LIST");
-            // Answer OK
-            if (send(*current_socket, "OK", 3, 0) == -1)
-            {
-                perror("send answer failed");
-                return NULL;
-            }
-
-            // Get User ID
-            size = recv(*current_socket, buffer, BUF - 1, 0);
-            if (!checkError(size))
-            {
-                break;
-            }
-            if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-            {
-                size -= 2;
-            }
-            else if (buffer[size - 1] == '\n')
-            {
-                --size;
-            }
-            buffer[size] = '\0';
-            char *username = strdup(buffer);
-
-            DIR *directory;
-            struct dirent *entry;
-            directory = opendir(mailSpoolDirectory);
-
-            if (directory == NULL)
-            {
-                perror("Error opening directory");
-            }
-
-            // Check if there is an inbox for the username
-            int foundUsrInbox = 0;
-            while ((entry = readdir(directory)) != NULL)
-            {
-                if (strcmp(username, entry->d_name) == 0)
-                {
-                    foundUsrInbox = 1;
-                    break;
-                }
-            }
-
-            // Close mail spool directory
-            if (closedir(directory) == -1)
-            {
-                printf("%s\n", "Error closing directory");
-            }
-
-            // If no inbox found return message count 0
-            if (!foundUsrInbox)
-            {
-                if (send(*current_socket, "0", 3, 0) == -1)
-                {
-                    perror("send answer failed");
-                    return NULL;
-                }
-            }
-            else
-            {
-                // Inbox found
-                DIR *directory;
-                struct dirent *entry;
-                char userFolder[PATH_MAX];
-                strcpy(userFolder, mailSpoolDirectory);
-                strcat(userFolder, "/");
-                strcat(userFolder, buffer);
-
-                directory = opendir(userFolder);
-                if (directory == NULL)
-                {
-                    perror("Error opening directory");
-                }
-
-                int foundMessages = 0;
-                char msg[BUF];
-                while ((entry = readdir(directory)) != NULL)
-                {
-                    // If not . or ..
-                    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
-                    {
-                        foundMessages += 1;
-                        strcat(msg, "\n");
-                        strcat(msg, entry->d_name);
-                    }
-                }
-
-                // Add nr of messages to buffer
-                sprintf(buffer, "%d", foundMessages);
-                // Add temp buffer of subject names to buffer
-                strcat(buffer, msg);
-                if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
-                {
-                    perror("send answer failed");
-                    return NULL;
-                }
-
-                // Close inbox dir
-                if (closedir(directory) == -1)
-                {
-                    printf("%s\n", "Error closing directory");
-                }
-            }
-
-            // Free dynamic copy for username
-            free(username);
+            mailerList(current_socket, buffer, mailSpoolDirectory);
         }
 
         if (strcmp(buffer, "READ") == 0)
