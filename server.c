@@ -50,26 +50,32 @@ void createDir(char *newDir)
     dir = opendir(newDir);
     if (dir)
     {
-        /* Directory exists. */
+        // Deirectory exists
+
+        //close dir
         closedir(dir);
     }
-    else if (ENOENT == errno)
+    else if (ENOENT == errno) // if could not enter directory
     {
-        /* Directory does not exist. */
-        check = mkdir(newDir, 0755); // 0777 = permissions: read, write, & execute for owner, group and others
+        // Directory does not exist
 
-        // check if directory is created or not
+        // create directory
+        check = mkdir(newDir, 0755); 
+
+        // if for created dir
         if (!check)
-            printf("Directory created\n");
+            return;
         else
         {
-            printf("Unable to create directory\n");
+            perror("Unable to create directory\n");
             exit(1);
         }
     }
     else
     {
-        /* opendir() failed for some other reason. */
+        // could not enter dir for other reasons
+        perror("Could not check for directory");
+        exit(1);
     }
     return;
 }
@@ -859,11 +865,6 @@ void *clientCommunication(void *data, char *mailSpoolDirectory)
             mailerDel(current_socket, buffer, mailSpoolDirectory);
         }
 
-        // if (send(*current_socket, "OK", 3, 0) == -1)
-        //{
-        //     perror("send answer failed");
-        //     return NULL;
-        // }
     } while (strcmp(buffer, "QUIT") != 0 && !abortRequested);
 
     // closes/frees the descriptor if not already
