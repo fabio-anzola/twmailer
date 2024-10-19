@@ -179,6 +179,13 @@ int main(int argc, char *argv[])
                 input_rows++;
                 buffer[size] = '\0';
             } while ((buffer[0] != '.') && (strlen(buffer) != 1));
+
+            size = recv(create_socket, buffer, BUF - 1, 0);
+            if (checkError(size))
+            {
+                buffer[size] = '\0';       // null terminate string
+                printf("<< %s\n", buffer); // OK or ERR expected here
+            }
         }
 
         if (strcmp(buffer, "LIST") == 0)

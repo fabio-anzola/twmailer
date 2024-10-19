@@ -367,6 +367,141 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
     free(username);
 }
 
+void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
+{
+    // Answer OK
+    if (send(*current_socket, "OK", 3, 0) == -1)
+    {
+        perror("send answer failed");
+        return;
+    }
+
+    // Get Sender ID
+    int size = recv(*current_socket, buffer, BUF - 1, 0);
+    if (!checkError(size))
+    {
+        return;
+    }
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+    {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n')
+    {
+        --size;
+    }
+    buffer[size] = '\0';
+    char *sender = strdup(buffer); // dynamisch statt fixe groesse mit strcpy
+
+    // Answer OK
+    if (send(*current_socket, "OK", 3, 0) == -1)
+    {
+        perror("send answer failed");
+        return;
+    }
+
+    // Get Receiver ID
+    size = recv(*current_socket, buffer, BUF - 1, 0);
+    if (!checkError(size))
+    {
+        return;
+    }
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+    {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n')
+    {
+        --size;
+    }
+    buffer[size] = '\0';
+    char *receiver = strdup(buffer);
+
+    // Answer OK
+    if (send(*current_socket, "OK", 3, 0) == -1)
+    {
+        perror("send answer failed");
+        return;
+    }
+
+    // Create Receiver Directory (.../spooldir/receiver)
+    char receiverDir[PATH_MAX] = {0}; // initialize to prevent saved stack
+    strcpy(receiverDir, mailSpoolDirectory);
+    strcat(receiverDir, "/");
+    strcat(receiverDir, receiver);
+    createDir(receiverDir);
+
+    // Get Subject
+    size = recv(*current_socket, buffer, BUF - 1, 0);
+    if (!checkError(size))
+    {
+        return;
+    }
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+    {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n')
+    {
+        --size;
+    }
+    buffer[size] = '\0';
+    char *subject = strdup(buffer);
+
+    // Answer OK
+    if (send(*current_socket, "OK", 3, 0) == -1)
+    {
+        perror("send answer failed");
+        return;
+    }
+
+    // Create File with Subject Name (.../spooldir/receiver + /subject.txt)
+    FILE *sbjFilePtr;
+    strcat(receiverDir, "/");
+    strcat(receiverDir, subject);
+    strcat(receiverDir, ".txt");
+    sbjFilePtr = fopen(receiverDir, "w");
+
+    // Write header with sender name
+    fprintf(sbjFilePtr, "# Message by %s:\n\n", sender);
+
+    // Get Message
+    do
+    {
+        size = recv(*current_socket, buffer, BUF - 1, 0);
+        if (!checkError(size))
+        {
+            break;
+        }
+        if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+        {
+            size -= 2;
+        }
+        else if (buffer[size - 1] == '\n')
+        {
+            --size;
+        }
+        buffer[size] = '\0';
+
+        fprintf(sbjFilePtr, "%s\n", buffer);
+
+    } while ((buffer[0] != '.') && (strlen(buffer) != 1));
+
+    // Answer OK
+    if (send(*current_socket, "OK", 3, 0) == -1)
+    {
+        perror("send answer failed");
+        return;
+    }
+
+    // Danymische kopien freigeben
+    // File ptr freigeben
+    fclose(sbjFilePtr);
+    free(sender);
+    free(receiver);
+    free(subject);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
@@ -558,134 +693,7 @@ void *clientCommunication(void *data, char *mailSpoolDirectory)
         if (strcmp(buffer, "SEND") == 0)
         {
             printf("%s", "Entered SEND");
-            // Answer OK
-            if (send(*current_socket, "OK", 3, 0) == -1)
-            {
-                perror("send answer failed");
-                return NULL;
-            }
-
-            // Get Sender ID
-            size = recv(*current_socket, buffer, BUF - 1, 0);
-            if (!checkError(size))
-            {
-                break;
-            }
-            if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-            {
-                size -= 2;
-            }
-            else if (buffer[size - 1] == '\n')
-            {
-                --size;
-            }
-            buffer[size] = '\0';
-            char *sender = strdup(buffer); // dynamisch statt fixe groesse mit strcpy
-
-            // Answer OK
-            if (send(*current_socket, "OK", 3, 0) == -1)
-            {
-                perror("send answer failed");
-                return NULL;
-            }
-
-            // Get Receiver ID
-            size = recv(*current_socket, buffer, BUF - 1, 0);
-            if (!checkError(size))
-            {
-                break;
-            }
-            if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-            {
-                size -= 2;
-            }
-            else if (buffer[size - 1] == '\n')
-            {
-                --size;
-            }
-            buffer[size] = '\0';
-            char *receiver = strdup(buffer);
-
-            // Answer OK
-            if (send(*current_socket, "OK", 3, 0) == -1)
-            {
-                perror("send answer failed");
-                return NULL;
-            }
-
-            // Create Receiver Directory
-            char receiverDir[PATH_MAX];
-            strcpy(receiverDir, mailSpoolDirectory);
-            strcat(receiverDir, "/");
-            strcat(receiverDir, receiver);
-            createDir(receiverDir);
-
-            // Get Subject
-            size = recv(*current_socket, buffer, BUF - 1, 0);
-            if (!checkError(size))
-            {
-                break;
-            }
-            if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-            {
-                size -= 2;
-            }
-            else if (buffer[size - 1] == '\n')
-            {
-                --size;
-            }
-            buffer[size] = '\0';
-            char *subject = strdup(buffer);
-
-            // printf("%s \n",sender);
-            // printf("%s \n",receiver);
-            // printf("%s \n",subject);
-
-            // Answer OK
-            if (send(*current_socket, "OK", 3, 0) == -1)
-            {
-                perror("send answer failed");
-                return NULL;
-            }
-
-            // Create File with Subject Name
-            FILE *sbjFilePtr;
-            strcat(receiverDir, "/");
-            strcat(receiverDir, subject);
-            strcat(receiverDir, ".txt");
-            sbjFilePtr = fopen(receiverDir, "w");
-
-            // Write header with sender name
-            fprintf(sbjFilePtr, "# Message by %s:\n\n", sender);
-
-            // Get Message
-            do
-            {
-                size = recv(*current_socket, buffer, BUF - 1, 0);
-                if (!checkError(size))
-                {
-                    break;
-                }
-                if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-                {
-                    size -= 2;
-                }
-                else if (buffer[size - 1] == '\n')
-                {
-                    --size;
-                }
-                buffer[size] = '\0';
-
-                fprintf(sbjFilePtr, "%s\n", buffer);
-
-            } while ((buffer[0] != '.') && (strlen(buffer) != 1));
-
-            // Danymische kopien freigeben
-            // File ptr freigeben
-            fclose(sbjFilePtr);
-            free(sender);
-            free(receiver);
-            free(subject);
+            mailerSend(current_socket, buffer, mailSpoolDirectory);
         }
 
         if (strcmp(buffer, "LIST") == 0)
