@@ -148,6 +148,124 @@ void mailerList(int create_socket, char *buffer)
     return;
 }
 
+// function to handel mailer read
+void mailerRead(int create_socket, char *buffer)
+{
+    // init size
+    int size = 0;
+
+    // Get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // send user message to server (username)
+    if (socketUserMsgSend(buffer, create_socket))
+    {
+        perror("send error");
+        return;
+    }
+
+    // get message from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // Write msg to server (message nr)
+    if (socketUserMsgSend(buffer, create_socket))
+    {
+        perror("send error");
+        return;
+    }
+
+    // Get msg from server - OK & Mesage content
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok & msg content or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    return;
+}
+
+// function to handel mailer delete
+void mailerDel(int create_socket, char *buffer)
+{
+    // init size
+    int size = 0;
+
+    // get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // send msg to server - username
+    if (socketUserMsgSend(buffer, create_socket))
+    {
+        perror("send error");
+        return;
+    }
+
+    // get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // send msg to server - msg nr
+    if (socketUserMsgSend(buffer, create_socket))
+    {
+        perror("send error");
+        return;
+    }
+
+    // get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    return;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
@@ -272,86 +390,14 @@ int main(int argc, char *argv[])
         {
             // READ
 
-            // Get answer from server - OK
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
-
-            // send user message to server (username)
-            if (socketUserMsgSend(buffer, create_socket))
-            {
-                perror("send error");
-                break;
-            }
-
-            // get message from server - OK
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
-
-            // Write msg to server (message nr)
-            if (socketUserMsgSend(buffer, create_socket))
-            {
-                perror("send error");
-                break;
-            }
-
-            // Get msg from server - OK & Mesage content
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
+            mailerRead(create_socket, buffer);
         }
 
         if (strcmp(buffer, "DEL") == 0)
         {
             // DEL
 
-            // get answer from server - OK
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
-
-            // send msg to server - username
-            if (socketUserMsgSend(buffer, create_socket))
-            {
-                perror("send error");
-                break;
-            }
-
-            // get answer from server - OK
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
-
-            // send msg to server - msg nr
-            if (socketUserMsgSend(buffer, create_socket))
-            {
-                perror("send error");
-                break;
-            }
-
-            // get answer from server - OK
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
+            mailerDel(create_socket, buffer);
         }
 
         // If entered string is QUIT then quit and close descriptors
