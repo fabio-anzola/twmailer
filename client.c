@@ -62,6 +62,7 @@ int socketUserMsgSend(char buffer[BUF], int socket)
     return ((send(socket, buffer, size, 0)) == -1);
 }
 
+// function to handle mailer send
 void mailerSend(int create_socket, char *buffer)
 {
     // init size
@@ -108,6 +109,42 @@ void mailerSend(int create_socket, char *buffer)
             return;
         }
     }
+    return;
+}
+
+// function to hande mailer list
+void mailerList(int create_socket, char *buffer)
+{
+    // init size
+    int size = 0;
+
+    // Receive answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // send msg to server (username)
+    if (socketUserMsgSend(buffer, create_socket))
+    {
+        perror("send error");
+        return;
+    }
+
+    // receive answer from server with subject names
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Msg Nrs & Subjects // if not found will only return 0 not err
+    }
+
     return;
 }
 
@@ -228,28 +265,7 @@ int main(int argc, char *argv[])
         {
             // LIST
 
-            // Receive answer from server - OK
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Ok or ERR
-            }
-
-            // send msg to server (username)
-            if (socketUserMsgSend(buffer, create_socket))
-            {
-                perror("send error");
-                break;
-            }
-
-            // receive answer from server with subject names
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // Msg Nrs & Subjects
-            }
+            mailerList(create_socket, buffer);
         }
 
         if (strcmp(buffer, "READ") == 0)
