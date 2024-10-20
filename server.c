@@ -24,8 +24,48 @@ int new_socket = -1;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void *clientCommunication(void *data, char *mailSpoolDirectory);
-void signalHandler(int sig);
+void signalHandler(int sig)
+{
+    if (sig == SIGINT)
+    {
+        printf("abort Requested... "); // ignore error
+        abortRequested = 1;
+        /////////////////////////////////////////////////////////////////////////
+        // With shutdown() one can initiate normal TCP close sequence ignoring
+        // the reference count.
+        // https://beej.us/guide/bgnet/html/#close-and-shutdownget-outta-my-face
+        // https://linux.die.net/man/3/shutdown
+        if (new_socket != -1)
+        {
+            if (shutdown(new_socket, SHUT_RDWR) == -1)
+            {
+                perror("shutdown new_socket");
+            }
+            if (close(new_socket) == -1)
+            {
+                perror("close new_socket");
+            }
+            new_socket = -1;
+        }
+
+        if (create_socket != -1)
+        {
+            if (shutdown(create_socket, SHUT_RDWR) == -1)
+            {
+                perror("shutdown create_socket");
+            }
+            if (close(create_socket) == -1)
+            {
+                perror("close create_socket");
+            }
+            create_socket = -1;
+        }
+    }
+    else
+    {
+        exit(sig);
+    }
+}
 
 int checkError(int size)
 {
@@ -653,6 +693,89 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     free(username);
 }
 
+void *clientCommunication(void *data, char *mailSpoolDirectory)
+{
+    char buffer[BUF];
+    int size;
+    int *current_socket = (int *)data;
+
+    ////////////////////////////////////////////////////////////////////////////
+    // SEND welcome message
+    // strcpy(buffer, "Welcome to TWMailer Basic!\r\nPlease enter your commands...\r\n");
+    snprintf(buffer, BUF, "%s", "Welcome to TWMailer Basic!\r\nPlease enter your commands...\r\n");
+    if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
+    {
+        perror("send failed");
+        return NULL;
+    }
+
+    do
+    {
+        /////////////////////////////////////////////////////////////////////////
+        // RECEIVE
+        size = recv(*current_socket, buffer, BUF - 1, 0);
+        // printf("Size: %d", size);
+        if (!checkError(size))
+        {
+            break;
+        }
+
+        // remove ugly debug message, because of the sent newline of client
+        if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+        {
+            size -= 2;
+        }
+        else if (buffer[size - 1] == '\n')
+        {
+            --size;
+        }
+
+        buffer[size] = '\0';
+        printf("Message received: %s\n", buffer); // ignore error
+
+        if (strcmp(buffer, "SEND") == 0)
+        {
+            printf("%s", "Entered SEND");
+            mailerSend(current_socket, buffer, mailSpoolDirectory);
+        }
+
+        if (strcmp(buffer, "LIST") == 0)
+        {
+            printf("%s", "Entered LIST");
+            mailerList(current_socket, buffer, mailSpoolDirectory);
+        }
+
+        if (strcmp(buffer, "READ") == 0)
+        {
+            printf("%s", "Entered READ");
+            mailerRead(current_socket, buffer, mailSpoolDirectory);
+        }
+
+        if (strcmp(buffer, "DEL") == 0)
+        {
+            printf("%s", "Entered DEL");
+            mailerDel(current_socket, buffer, mailSpoolDirectory);
+        }
+
+    } while (strcmp(buffer, "QUIT") != 0 && !abortRequested);
+
+    // closes/frees the descriptor if not already
+    if (*current_socket != -1)
+    {
+        if (shutdown(*current_socket, SHUT_RDWR) == -1)
+        {
+            perror("shutdown new_socket");
+        }
+        if (close(*current_socket) == -1)
+        {
+            perror("close new_socket");
+        }
+        *current_socket = -1;
+    }
+
+    return NULL;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
@@ -799,130 +922,4 @@ int main(int argc, char *argv[])
     }
 
     return EXIT_SUCCESS;
-}
-
-void *clientCommunication(void *data, char *mailSpoolDirectory)
-{
-    char buffer[BUF];
-    int size;
-    int *current_socket = (int *)data;
-
-    ////////////////////////////////////////////////////////////////////////////
-    // SEND welcome message
-    // strcpy(buffer, "Welcome to TWMailer Basic!\r\nPlease enter your commands...\r\n");
-    snprintf(buffer, BUF, "%s", "Welcome to TWMailer Basic!\r\nPlease enter your commands...\r\n");
-    if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
-    {
-        perror("send failed");
-        return NULL;
-    }
-
-    do
-    {
-        /////////////////////////////////////////////////////////////////////////
-        // RECEIVE
-        size = recv(*current_socket, buffer, BUF - 1, 0);
-        // printf("Size: %d", size);
-        if (!checkError(size))
-        {
-            break;
-        }
-
-        // remove ugly debug message, because of the sent newline of client
-        if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-        {
-            size -= 2;
-        }
-        else if (buffer[size - 1] == '\n')
-        {
-            --size;
-        }
-
-        buffer[size] = '\0';
-        printf("Message received: %s\n", buffer); // ignore error
-
-        if (strcmp(buffer, "SEND") == 0)
-        {
-            printf("%s", "Entered SEND");
-            mailerSend(current_socket, buffer, mailSpoolDirectory);
-        }
-
-        if (strcmp(buffer, "LIST") == 0)
-        {
-            printf("%s", "Entered LIST");
-            mailerList(current_socket, buffer, mailSpoolDirectory);
-        }
-
-        if (strcmp(buffer, "READ") == 0)
-        {
-            printf("%s", "Entered READ");
-            mailerRead(current_socket, buffer, mailSpoolDirectory);
-        }
-
-        if (strcmp(buffer, "DEL") == 0)
-        {
-            printf("%s", "Entered DEL");
-            mailerDel(current_socket, buffer, mailSpoolDirectory);
-        }
-
-    } while (strcmp(buffer, "QUIT") != 0 && !abortRequested);
-
-    // closes/frees the descriptor if not already
-    if (*current_socket != -1)
-    {
-        if (shutdown(*current_socket, SHUT_RDWR) == -1)
-        {
-            perror("shutdown new_socket");
-        }
-        if (close(*current_socket) == -1)
-        {
-            perror("close new_socket");
-        }
-        *current_socket = -1;
-    }
-
-    return NULL;
-}
-
-void signalHandler(int sig)
-{
-    if (sig == SIGINT)
-    {
-        printf("abort Requested... "); // ignore error
-        abortRequested = 1;
-        /////////////////////////////////////////////////////////////////////////
-        // With shutdown() one can initiate normal TCP close sequence ignoring
-        // the reference count.
-        // https://beej.us/guide/bgnet/html/#close-and-shutdownget-outta-my-face
-        // https://linux.die.net/man/3/shutdown
-        if (new_socket != -1)
-        {
-            if (shutdown(new_socket, SHUT_RDWR) == -1)
-            {
-                perror("shutdown new_socket");
-            }
-            if (close(new_socket) == -1)
-            {
-                perror("close new_socket");
-            }
-            new_socket = -1;
-        }
-
-        if (create_socket != -1)
-        {
-            if (shutdown(create_socket, SHUT_RDWR) == -1)
-            {
-                perror("shutdown create_socket");
-            }
-            if (close(create_socket) == -1)
-            {
-                perror("close create_socket");
-            }
-            create_socket = -1;
-        }
-    }
-    else
-    {
-        exit(sig);
-    }
 }
