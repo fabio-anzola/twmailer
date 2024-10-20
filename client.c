@@ -62,11 +62,60 @@ int socketUserMsgSend(char buffer[BUF], int socket)
     return ((send(socket, buffer, size, 0)) == -1);
 }
 
+void mailerSend(int create_socket, char *buffer)
+{
+    // init size
+    int size = 0;
+    // current input nr
+    int input_rows = 0;
+    // input needed for protocol
+    int msg_type_rows = 4;
+    do
+    {
+        if (input_rows < msg_type_rows)
+        {
+            // wait for server repsonse (4) times
+            size = recv(create_socket, buffer, BUF - 1, 0);
+            if (checkError(size))
+            {
+                buffer[size] = '\0';       // null terminate string
+                printf("<< %s\n", buffer); // OK or ERR expected here
+                if (strcmp(buffer, "ERR") == 0)
+                {
+                    return;
+                }
+            }
+        }
+
+        // After each server respone send answer -> last interation message!
+        if (socketUserMsgSend(buffer, create_socket))
+        {
+            perror("send error");
+            break; // break out of function wait for new user input
+        }
+        input_rows++;
+        buffer[size] = '\0';
+    } while ((buffer[0] != '.') && (strlen(buffer) != 1));
+
+    // Get server answer
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';       // null terminate string
+        printf("<< %s\n", buffer); // OK or ERR expected here
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+    return;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
 {
-    // var fro initial socket
+    // var for initial socket
     int create_socket;
     // buffer array with size BUF
     char buffer[BUF];
@@ -172,40 +221,7 @@ int main(int argc, char *argv[])
         { // if user has entered SEND
             // SEND
 
-            // current input nr
-            int input_rows = 0;
-            // input needed for protocol
-            int msg_type_rows = 4;
-            do
-            {
-                if (input_rows < msg_type_rows)
-                {
-                    // wait for server repsonse (4) times
-                    size = recv(create_socket, buffer, BUF - 1, 0);
-                    if (checkError(size))
-                    {
-                        buffer[size] = '\0';       // null terminate string
-                        printf("<< %s\n", buffer); // OK or ERR expected here
-                    }
-                }
-
-                // After each server respone send answer -> last interation message!
-                if (socketUserMsgSend(buffer, create_socket))
-                {
-                    perror("send error");
-                    break; // break out of function wait for new user input
-                }
-                input_rows++;
-                buffer[size] = '\0';
-            } while ((buffer[0] != '.') && (strlen(buffer) != 1));
-
-            // Get server answer
-            size = recv(create_socket, buffer, BUF - 1, 0);
-            if (checkError(size))
-            {
-                buffer[size] = '\0';       // null terminate string
-                printf("<< %s\n", buffer); // OK or ERR expected here
-            }
+            mailerSend(create_socket, buffer);
         }
 
         if (strcmp(buffer, "LIST") == 0)
