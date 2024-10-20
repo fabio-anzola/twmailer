@@ -9,15 +9,18 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Buffer size
 #define BUF 4096
 
+// Function to process user input and clean from new line
 char userInput(char buffer[BUF])
 {
     printf(">> ");
+    // get line from stdin
     if (fgets(buffer, BUF, stdin) != NULL)
     {
         int size = strlen(buffer);
-        // remove new-line signs from string at the end
+        // remove rn sign and add n for nl
         if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
         {
             size -= 2;
@@ -32,6 +35,7 @@ char userInput(char buffer[BUF])
     return *buffer;
 }
 
+// function to check socket recv for error based on size
 int checkError(int size)
 {
     if (size == -1)
@@ -44,14 +48,17 @@ int checkError(int size)
         printf("Server closed remote socket\n"); // ignore error
         return 0;
     }
+    // no issue
     return 1;
 }
 
+// function that calls for user input and sends it to server
 int socketUserMsgSend(char buffer[BUF], int socket)
 {
+    // get sanitized user in
     userInput(buffer);
     int size = strlen(buffer);
-    // printf("Sending: %s", buffer);
+    // send user in via socket
     return ((send(socket, buffer, size, 0)) == -1);
 }
 
@@ -59,15 +66,22 @@ int socketUserMsgSend(char buffer[BUF], int socket)
 
 int main(int argc, char *argv[])
 {
+    // var fro initial socket
     int create_socket;
+    // buffer array with size BUF
     char buffer[BUF];
+    // Address to connect to
     struct sockaddr_in address;
+    // Size in for recieving
     int size;
+    // Check if quit is entered
     int isQuit = 0;
+    // Port to connect to
     int PORT;
 
     ////////////////////////////////////////////////////////////////////////////
 
+    // Get args from terminal call
     if (argc != 3)
     {
         printf("Usage: %s <ip> <port>\n", argv[0]);
@@ -128,6 +142,7 @@ int main(int argc, char *argv[])
     // RECEIVE DATA
     // https://man7.org/linux/man-pages/man2/recv.2.html
 
+    // Receive initial data (welcome msg)
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (checkError(size))
     {
@@ -143,6 +158,7 @@ int main(int argc, char *argv[])
         // userInput(buffer);
         // size = strlen(buffer);
         // if ((send(create_socket, buffer, size, 0)) == -1)
+        // Send command to server
         if (socketUserMsgSend(buffer, create_socket))
         {
             perror("send error");
@@ -150,16 +166,21 @@ int main(int argc, char *argv[])
         }
 
         //////////////////////////////////////////////////////////////////////
+        // Check which command has been sent
 
         if (strcmp(buffer, "SEND") == 0)
         { // if user has entered SEND
             // SEND
+
+            // current input nr
             int input_rows = 0;
+            // input needed for protocol
             int msg_type_rows = 4;
             do
             {
                 if (input_rows < msg_type_rows)
                 {
+                    // wait for server repsonse (4) times
                     size = recv(create_socket, buffer, BUF - 1, 0);
                     if (checkError(size))
                     {
@@ -168,9 +189,7 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                // userInput(buffer);
-                // size = strlen(buffer);
-                // if ((send(create_socket, buffer, size, 0)) == -1)
+                // After each server respone send answer -> last interation message!
                 if (socketUserMsgSend(buffer, create_socket))
                 {
                     perror("send error");
@@ -180,6 +199,7 @@ int main(int argc, char *argv[])
                 buffer[size] = '\0';
             } while ((buffer[0] != '.') && (strlen(buffer) != 1));
 
+            // Get server answer
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -192,6 +212,7 @@ int main(int argc, char *argv[])
         {
             // LIST
 
+            // Receive answer from server - OK
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -199,14 +220,14 @@ int main(int argc, char *argv[])
                 printf("<< %s\n", buffer); // Ok or ERR
             }
 
-            // userInput(buffer);
-            // if ((send(create_socket, buffer, strlen(buffer), 0)) == -1)
+            // send msg to server (username)
             if (socketUserMsgSend(buffer, create_socket))
             {
                 perror("send error");
                 break;
             }
 
+            // receive answer from server with subject names
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -218,6 +239,8 @@ int main(int argc, char *argv[])
         if (strcmp(buffer, "READ") == 0)
         {
             // READ
+
+            // Get answer from server - OK
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -225,14 +248,14 @@ int main(int argc, char *argv[])
                 printf("<< %s\n", buffer); // Ok or ERR
             }
 
-            // userInput(buffer);
-            // if ((send(create_socket, buffer, strlen(buffer), 0)) == -1)
+            // send user message to server (username)
             if (socketUserMsgSend(buffer, create_socket))
             {
                 perror("send error");
                 break;
             }
 
+            // get message from server - OK
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -240,14 +263,14 @@ int main(int argc, char *argv[])
                 printf("<< %s\n", buffer); // Ok or ERR
             }
 
-            // userInput(buffer);
-            // if ((send(create_socket, buffer, strlen(buffer), 0)) == -1)
+            // Write msg to server (message nr)
             if (socketUserMsgSend(buffer, create_socket))
             {
                 perror("send error");
                 break;
             }
 
+            // Get msg from server - OK & Mesage content
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -259,6 +282,8 @@ int main(int argc, char *argv[])
         if (strcmp(buffer, "DEL") == 0)
         {
             // DEL
+
+            // get answer from server - OK
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -266,14 +291,14 @@ int main(int argc, char *argv[])
                 printf("<< %s\n", buffer); // Ok or ERR
             }
 
-            // userInput(buffer);
-            // if ((send(create_socket, buffer, strlen(buffer), 0)) == -1)
+            // send msg to server - username
             if (socketUserMsgSend(buffer, create_socket))
             {
                 perror("send error");
                 break;
             }
 
+            // get answer from server - OK
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -281,14 +306,14 @@ int main(int argc, char *argv[])
                 printf("<< %s\n", buffer); // Ok or ERR
             }
 
-            // userInput(buffer);
-            // if ((send(create_socket, buffer, strlen(buffer), 0)) == -1)
+            // send msg to server - msg nr
             if (socketUserMsgSend(buffer, create_socket))
             {
                 perror("send error");
                 break;
             }
 
+            // get answer from server - OK
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -297,6 +322,7 @@ int main(int argc, char *argv[])
             }
         }
 
+        // If entered string is QUIT then quit and close descriptors
         if (strcmp(buffer, "QUIT") == 0)
         {
             isQuit = 1;
@@ -309,12 +335,13 @@ int main(int argc, char *argv[])
     {
         if (shutdown(create_socket, SHUT_RDWR) == -1)
         {
-            // invalid in case the server is gone already
-            perror("shutdown create_socket");
+            // could not shoutdown - server down
+            perror("error on shutdown socket");
         }
         if (close(create_socket) == -1)
         {
-            perror("close create_socket");
+            // could not close socket
+            perror("error on close socket");
         }
         create_socket = -1;
     }
