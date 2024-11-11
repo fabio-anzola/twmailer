@@ -11,6 +11,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <linux/limits.h>
+#include <pthread.h>
+#include <sys/mman.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -19,10 +21,12 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Initialize global cars
+// Initialize global vars
 int abortRequested = 0;
 int create_socket = -1;
 int new_socket = -1;
+
+pthread_mutex_t *mutex;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -44,6 +48,11 @@ void sendOk(int *current_socket)
         perror("send answer failed");
         return;
     }
+}
+
+int checkUserLogon()
+{
+    return 1;
 }
 
 // Signal handler for SIGINT - shutdown socket
@@ -181,6 +190,9 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
     // Make dynamic copy of buffer for username
     char *username = strdup(buffer);
 
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
     // Prepare vars for mail direcotry
     DIR *directory;
     struct dirent *entry;
@@ -192,6 +204,8 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
         perror("Error opening directory");
         sendErr(current_socket);
         free(username);
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
         return;
     }
 
@@ -212,8 +226,12 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
         printf("%s\n", "Error closing directory");
         sendErr(current_socket);
         free(username);
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
         return;
     }
+    // Unlock mutex
+    pthread_mutex_unlock(mutex);
 
     // If no inbox found return message count 0
     if (!foundUsrInbox)
@@ -241,6 +259,9 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
         strcat(userFolder, "/");
         strcat(userFolder, username);
 
+        // Check if fs access is available
+        pthread_mutex_lock(mutex);
+
         // open user inbox
         directory = opendir(userFolder);
 
@@ -249,6 +270,8 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
         {
             perror("Error opening directory");
             free(username);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
         }
 
         // init vars for file search / lisiting
@@ -272,6 +295,18 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
             }
         }
 
+        // Close inbox dir
+        if (closedir(directory) == -1)
+        {
+            printf("%s\n", "Error closing directory");
+            free(username);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
+            return;
+        }
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
+
         // Add nr of messages to buffer
         sprintf(buffer, "%d", foundMessages);
 
@@ -283,14 +318,8 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
         {
             perror("send answer failed");
             free(username);
-            return;
-        }
-
-        // Close inbox dir
-        if (closedir(directory) == -1)
-        {
-            printf("%s\n", "Error closing directory");
-            free(username);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
             return;
         }
     }
@@ -842,12 +871,12 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
 }
 
 // function to handle client communication and call mailer funcs
-void *clientCommunication(void *data, char *mailSpoolDirectory)
+void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
 {
     // initialize communications vars
     char buffer[BUF];
     int size;
-    int *current_socket = (int *)data;
+    //int *current_socket = (int *)data;
 
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
@@ -1021,6 +1050,25 @@ int main(int argc, char *argv[])
     }
 
     ////////////////////////////////////////////////////////////////////////////
+    // Initialize Shared Memory
+    mutex = mmap(NULL, sizeof(pthread_mutex_t),
+                                  PROT_READ | PROT_WRITE,
+                                  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (mutex == MAP_FAILED) {
+        perror("mmap fehlgeschlagen");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize mutex
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+
+
+
+    ////////////////////////////////////////////////////////////////////////////
     // ALLOW CONNECTION ESTABLISHING
     // Socket, Backlog (= count of waiting connections allowed)
     if (listen(create_socket, 5) == -1)
@@ -1061,7 +1109,24 @@ int main(int argc, char *argv[])
         printf("Client connected from %s:%d...\n",
                inet_ntoa(cliaddress.sin_addr),
                ntohs(cliaddress.sin_port));
-        clientCommunication(&new_socket, mailSpoolDirectory); // returnValue can be ignored
+
+        pid_t pid = fork();
+        if (pid < 0)
+        {
+            perror("fork error");
+            close(new_socket); // close socket on error
+            continue;
+        }
+        else if (pid == 0)
+        {
+            // Child process
+            close(create_socket); // child does not need listening socket
+            clientCommunication(&new_socket, mailSpoolDirectory);
+            close(new_socket);
+            exit(EXIT_SUCCESS); // exit child process
+        }
+
+        // clientCommunication(&new_socket, mailSpoolDirectory); // returnValue can be ignored
         new_socket = -1;
     }
 
