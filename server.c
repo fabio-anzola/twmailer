@@ -92,6 +92,9 @@ void signalHandler(int sig)
             }
             create_socket = -1;
         }
+
+        pthread_mutex_destroy(mutex);
+        munmap(mutex, sizeof(pthread_mutex_t));
     }
     else
     {
@@ -361,6 +364,9 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
     DIR *directory;
     struct dirent *entry;
 
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
     // Open mailspool directory
     directory = opendir(mailSpoolDirectory);
 
@@ -370,6 +376,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         perror("Error opening directory");
         free(username);
         sendErr(current_socket);
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
         return;
     }
 
@@ -390,8 +398,13 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         printf("%s\n", "Error closing directory");
         free(username);
         sendErr(current_socket);
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
         return;
     }
+
+    // Unlock mutex
+    pthread_mutex_unlock(mutex);
 
     // If no inbox found return ERR else OK and proceed
     if (!foundUsrInbox)
@@ -438,6 +451,9 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         strcat(userFolder, username);
         strcat(userFolder, "/");
 
+        // Check if fs access is available
+        pthread_mutex_lock(mutex);
+
         // Open inbox folder
         directory = opendir(userFolder);
 
@@ -448,6 +464,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
             free(username);
             free(messageid);
             sendErr(current_socket);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
             return;
         }
 
@@ -476,12 +494,20 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
             free(username);
             free(messageid);
             sendErr(current_socket);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
             return;
         }
+
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
 
         // check if file has been found
         if (foundFile)
         {
+            // Check if fs access is available
+            pthread_mutex_lock(mutex);
+
             // Open file
             FILE *file = fopen(userFolder, "r");
 
@@ -492,6 +518,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 free(username);
                 free(messageid);
                 sendErr(current_socket);
+                // Unlock mutex
+                pthread_mutex_unlock(mutex);
                 return;
             }
 
@@ -512,6 +540,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 free(username);
                 free(messageid);
                 sendErr(current_socket);
+                // Unlock mutex
+                pthread_mutex_unlock(mutex);
                 return;
             }
 
@@ -530,6 +560,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 free(username);
                 free(messageid);
                 sendErr(current_socket);
+                // Unlock mutex
+                pthread_mutex_unlock(mutex);
                 return;
             }
 
@@ -544,6 +576,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 fclose(file);
                 free(username);
                 free(messageid);
+                // Unlock mutex
+                pthread_mutex_unlock(mutex);
                 return;
             }
 
@@ -551,6 +585,8 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
             free(f_buffer);
             // close file descr
             fclose(file);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
         }
         else
         {
@@ -629,8 +665,14 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
     strcat(receiverDir, "/");
     strcat(receiverDir, receiver);
 
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
     // Create directory for receiver
     createDir(receiverDir);
+
+    // Unlock mutex
+    pthread_mutex_unlock(mutex);
 
     // Get Subject
     size = recv(*current_socket, buffer, BUF - 1, 0);
@@ -666,6 +708,9 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
     strcat(receiverDir, subject);
     strcat(receiverDir, ".txt");
 
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
     // open subject file
     sbjFilePtr = fopen(receiverDir, "w");
 
@@ -673,6 +718,7 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
     fprintf(sbjFilePtr, "# Message by %s:\n\n", sender);
 
     // Get Message
+    // TODO: Could write into temp buffer so mutex doesnt stay locked for too long
     do
     {
         size = recv(*current_socket, buffer, BUF - 1, 0);
@@ -683,6 +729,8 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
             free(subject);
             fclose(sbjFilePtr);
             sendErr(current_socket);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
             return;
         }
 
@@ -702,12 +750,16 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
 
     } while ((buffer[0] != '.') && (strlen(buffer) != 1));
 
+    // File ptr freigeben
+    fclose(sbjFilePtr);
+
+    // Unlock mutex
+    pthread_mutex_unlock(mutex);
+
     // Answer OK
     sendOk(current_socket);
 
     // Danymische kopien freigeben
-    // File ptr freigeben
-    fclose(sbjFilePtr);
     free(sender);
     free(receiver);
     free(subject);
@@ -747,6 +799,9 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     DIR *directory;
     struct dirent *entry;
 
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
     // open mail spool
     directory = opendir(mailSpoolDirectory);
 
@@ -756,6 +811,8 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         perror("Error opening directory");
         free(username);
         sendErr(current_socket);
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
         return;
     }
 
@@ -776,8 +833,13 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         perror("Error closing directory");
         free(username);
         sendErr(current_socket);
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
         return;
     }
+
+    // Unlock mutex
+    pthread_mutex_unlock(mutex);
 
     // If no inbox found return ERR else OK
     if (!foundUsrInbox)
@@ -821,6 +883,9 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         strcat(userFolder, username);
         strcat(userFolder, "/");
 
+        // Check if fs access is available
+        pthread_mutex_lock(mutex);
+
         // Open inbox folder
         directory = opendir(userFolder);
 
@@ -831,6 +896,8 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
             sendErr(current_socket);
             free(username);
             free(messageid);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
             return;
         }
 
@@ -850,7 +917,7 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
             }
         }
 
-        // delte file
+        // delete file
         if (remove(userFolder) == 0)
         {
             // Remove is successful
@@ -860,6 +927,11 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         {
             sendErr(current_socket);
         }
+
+        close(userFolder);
+
+        // Unlock mutex
+        pthread_mutex_unlock(mutex);
 
         // Free dynam alloc messageid
         free(messageid);
@@ -876,7 +948,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
     // initialize communications vars
     char buffer[BUF];
     int size;
-    //int *current_socket = (int *)data;
+    // int *current_socket = (int *)data;
 
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
@@ -1051,22 +1123,22 @@ int main(int argc, char *argv[])
 
     ////////////////////////////////////////////////////////////////////////////
     // Initialize Shared Memory
-    mutex = mmap(NULL, sizeof(pthread_mutex_t),
-                                  PROT_READ | PROT_WRITE,
-                                  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (mutex == MAP_FAILED) {
+    mutex = mmap(NULL, sizeof(pthread_mutex_t),      // mmap maps file into memeory -> Null menas os chooses adress
+                 PROT_READ | PROT_WRITE,             // Allow read & write access
+                 MAP_SHARED | MAP_ANONYMOUS, -1, 0); // Updates to memeory should be shared across processes and is not file backed
+
+    if (mutex == MAP_FAILED)
+    {
         perror("mmap fehlgeschlagen");
         exit(EXIT_FAILURE);
     }
 
     // Initialize mutex
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
-
-
+    pthread_mutexattr_t attr;                                    // define attribute object for mutex
+    pthread_mutexattr_init(&attr);                               // initialize attribute object
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED); // makes mutex shared across processes
+    pthread_mutex_init(mutex, &attr);                            // initialize mutex in mapped memeory region and with attributes object
+    pthread_mutexattr_destroy(&attr);                            // cleans up attribute object as its not used anymore
 
     ////////////////////////////////////////////////////////////////////////////
     // ALLOW CONNECTION ESTABLISHING
@@ -1143,6 +1215,9 @@ int main(int argc, char *argv[])
         }
         create_socket = -1;
     }
+
+    pthread_mutex_destroy(mutex);
+    munmap(mutex, sizeof(pthread_mutex_t));
 
     return EXIT_SUCCESS;
 }
