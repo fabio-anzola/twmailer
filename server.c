@@ -13,6 +13,8 @@
 #include <linux/limits.h>
 #include <pthread.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
+
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -91,6 +93,16 @@ void signalHandler(int sig)
                 perror("close create_socket");
             }
             create_socket = -1;
+        }
+
+        // Non-blocking wait for child processes
+        pid_t pid;
+        while ((pid = waitpid(-1, NULL, WNOHANG)))
+        {
+            if ((pid == -1) && (errno != EINTR))
+            {
+                break;
+            }
         }
 
         pthread_mutex_destroy(mutex);
@@ -928,7 +940,17 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
             sendErr(current_socket);
         }
 
-        close(userFolder);
+        // Close inbox directory
+        if (closedir(directory) == -1)
+        {
+            perror("Error closing directory");
+            free(username);
+            free(messageid);
+            sendErr(current_socket);
+            // Unlock mutex
+            pthread_mutex_unlock(mutex);
+            return;
+        }
 
         // Unlock mutex
         pthread_mutex_unlock(mutex);
@@ -1218,6 +1240,16 @@ int main(int argc, char *argv[])
 
     pthread_mutex_destroy(mutex);
     munmap(mutex, sizeof(pthread_mutex_t));
+
+    // Non-blocking wait for child processes
+    pid_t pid;
+    while ((pid = waitpid(-1, NULL, WNOHANG)))
+    {
+        if ((pid == -1) && (errno != EINTR))
+        {
+            break;
+        }
+    }
 
     return EXIT_SUCCESS;
 }
