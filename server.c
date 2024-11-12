@@ -54,6 +54,7 @@ void sendOk(int *current_socket)
     }
 }
 
+// Ldap authentication here
 int checkUserLogon(char ldapUser[128], char ldapPasswd[128]) // ldapuser=if24b001 ldappasswd=s3cret
 {
     // Setup var for ldap handle
@@ -1009,7 +1010,8 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     return;
 }
 
-int mailerLogon(int *current_socket, char *buffer) {
+int mailerLogon(int *current_socket, char *buffer)
+{
     int size = 0;
 
     // Answer OK
@@ -1068,13 +1070,14 @@ int mailerLogon(int *current_socket, char *buffer) {
     free(username);
     free(password);
 
-    if (status == EXIT_SUCCESS) {
+    if (status == EXIT_SUCCESS)
+    {
         sendOk(current_socket);
-    } else {
-        sendErr(current_socket);
+        return 1;
     }
 
-    return status;
+    sendErr(current_socket);
+    return 0;
 }
 
 // function to handle client communication and call mailer funcs
@@ -1128,13 +1131,13 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
             printf("%s", "Entered LOGIN \n");
             user_authenticated = mailerLogon(current_socket, buffer);
         }
-
-        if (!user_authenticated)
+        else if (!user_authenticated)
         {
             sendErr(current_socket);
         }
         else
         {
+
             // Enter correct mailer function based on input
             if (strcmp(buffer, "SEND") == 0)
             {
@@ -1175,7 +1178,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
         }
         if (close(*current_socket) == -1)
         {
-            perror("coudl not close socket");
+            perror("could not close socket");
         }
         *current_socket = -1;
     }

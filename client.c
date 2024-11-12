@@ -59,7 +59,10 @@ int socketUserMsgSend(char buffer[BUF], int socket)
     userInput(buffer);
     int size = strlen(buffer);
     // send user in via socket
-    return ((send(socket, buffer, size, 0)) == -1);
+    if (size != 0) {
+        return ((send(socket, buffer, size, 0)) == -1);
+    }
+    return 0;
 }
 
 // function to handle mailer send
@@ -266,6 +269,73 @@ void mailerDel(int create_socket, char *buffer)
     return;
 }
 
+// function to handel mailer login
+void mailerLogin(int create_socket, char *buffer)
+{
+    // init size
+    int size = 0;
+
+    // get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // send msg to server - username
+    if (socketUserMsgSend(buffer, create_socket))
+    {
+        perror("send error");
+        return;
+    }
+
+    // get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    // send msg to server - password
+    char passBuf[256];
+    strncpy(passBuf, getpass("Enter password: "), sizeof(passBuf) - 1);
+    passBuf[sizeof(passBuf) - 1] = '\0';
+    size = strlen(passBuf);
+    int msgCode = -99;
+    // send user passwd via socket
+    msgCode = ((send(create_socket, passBuf, size, 0)) == -1);
+
+    if (msgCode)
+    {
+        perror("send error");
+        return;
+    }
+
+    // get answer from server - OK
+    size = recv(create_socket, buffer, BUF - 1, 0);
+    if (checkError(size))
+    {
+        buffer[size] = '\0';
+        printf("<< %s\n", buffer); // Ok or ERR
+        if (strcmp(buffer, "ERR") == 0)
+        {
+            return;
+        }
+    }
+
+    return;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[])
@@ -369,31 +439,43 @@ int main(int argc, char *argv[])
             break;
         }
 
+        // If user just pressed enter with no message then continue
+        if (strlen(buffer) == 0) {
+            continue;
+        }
+
         //////////////////////////////////////////////////////////////////////
         // Check which command has been sent
 
-        if (strcmp(buffer, "SEND") == 0)
+        if (strcmp(buffer, "LOGIN") == 0)
+        { // if user has entered LOGIN
+            // LOGIN
+
+            mailerLogin(create_socket, buffer);
+        }
+
+        else if (strcmp(buffer, "SEND") == 0)
         { // if user has entered SEND
             // SEND
 
             mailerSend(create_socket, buffer);
         }
 
-        if (strcmp(buffer, "LIST") == 0)
+        else if (strcmp(buffer, "LIST") == 0)
         {
             // LIST
 
             mailerList(create_socket, buffer);
         }
 
-        if (strcmp(buffer, "READ") == 0)
+        else if (strcmp(buffer, "READ") == 0)
         {
             // READ
 
             mailerRead(create_socket, buffer);
         }
 
-        if (strcmp(buffer, "DEL") == 0)
+        else if (strcmp(buffer, "DEL") == 0)
         {
             // DEL
 
@@ -401,9 +483,19 @@ int main(int argc, char *argv[])
         }
 
         // If entered string is QUIT then quit and close descriptors
-        if (strcmp(buffer, "QUIT") == 0)
+        else if (strcmp(buffer, "QUIT") == 0)
         {
             isQuit = 1;
+        }
+        else
+        {
+            // Receive err for unrecognised command
+            size = recv(create_socket, buffer, BUF - 1, 0);
+            if (checkError(size))
+            {
+                buffer[size] = '\0';  // NULL terminal received from server
+                printf("<< %s\n", buffer); // Probably ERR
+            }
         }
     } while (!isQuit);
 
