@@ -14,7 +14,9 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
-
+#define LDAP_DEPRECATED 1
+#include <ldap.h>
+#include <lber.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -52,9 +54,52 @@ void sendOk(int *current_socket)
     }
 }
 
-int checkUserLogon()
+int checkUserLogon(char ldapUser[128], char ldapPasswd[128]) // ldapuser=if24b001 ldappasswd=s3cret
 {
-    return 1;
+    // Setup var for ldap handle
+    LDAP *ldap_handle;
+
+    // Setup vars for ldap connections
+    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const int ldapVersion = LDAP_VERSION3;
+
+    // For users designuished name (dn)
+    char ldapBindUser[256];
+    // For users bind password
+    char ldapBindPassword[256];
+
+    // Setup dn
+    sprintf(ldapBindUser, "uid=%s,ou=people,dc=technikum-wien,dc=at", ldapUser);
+
+    // Setup pw
+    strcpy(ldapBindPassword, ldapPasswd);
+
+    // Initialize LDAP connection
+    int rc = ldap_initialize(&ldap_handle, ldapUri);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "Failed to initialize LDAP connection: %s\n", ldap_err2string(rc));
+        return EXIT_FAILURE;
+    }
+
+    // Set LDAP protocol version
+    ldap_set_option(ldap_handle, LDAP_OPT_PROTOCOL_VERSION, &ldapVersion);
+
+    // Attempt to bind (authenticate) with provided DN and password
+    rc = ldap_simple_bind_s(ldap_handle, ldapBindUser, ldapBindPassword);
+
+    if (rc == LDAP_SUCCESS)
+    {
+        printf("Ldap Authentication successful.\n");
+    }
+    else
+    {
+        fprintf(stderr, "Authentication failed: %s\n", ldap_err2string(rc));
+    }
+
+    // Cleanup
+    ldap_unbind_ext_s(ldap_handle, NULL, NULL);
+    return rc == LDAP_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 // Signal handler for SIGINT - shutdown socket
@@ -964,6 +1009,74 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     return;
 }
 
+int mailerLogon(int *current_socket, char *buffer) {
+    int size = 0;
+
+    // Answer OK
+    sendOk(current_socket);
+
+    // Get username
+    size = recv(*current_socket, buffer, BUF - 1, 0);
+    if (!checkError(size))
+    {
+        sendErr(current_socket);
+        return EXIT_FAILURE;
+    }
+
+    // sanitize msg and 0 terminate
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+    {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n')
+    {
+        --size;
+    }
+    buffer[size] = '\0';
+
+    // make dynamic copy of username in buffer
+    char *username = strdup(buffer);
+
+    // Answer OK
+    sendOk(current_socket);
+
+    // Get password
+    size = recv(*current_socket, buffer, BUF - 1, 0);
+    if (!checkError(size))
+    {
+        sendErr(current_socket);
+        free(username);
+        return EXIT_FAILURE;
+    }
+
+    // sanitize msg and 0 terminate
+    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+    {
+        size -= 2;
+    }
+    else if (buffer[size - 1] == '\n')
+    {
+        --size;
+    }
+    buffer[size] = '\0';
+
+    // make dynamic copy of username in buffer
+    char *password = strdup(buffer);
+
+    int status = checkUserLogon(username, password);
+
+    free(username);
+    free(password);
+
+    if (status == EXIT_SUCCESS) {
+        sendOk(current_socket);
+    } else {
+        sendErr(current_socket);
+    }
+
+    return status;
+}
+
 // function to handle client communication and call mailer funcs
 void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
 {
@@ -971,6 +1084,9 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
     char buffer[BUF];
     int size;
     // int *current_socket = (int *)data;
+
+    // flag for user auth
+    int user_authenticated = 0;
 
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
@@ -1007,31 +1123,45 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
         // printf("Message received: %s\n", buffer); // ignore error
 
         // Enter correct mailer function based on input
-        if (strcmp(buffer, "SEND") == 0)
+        if (strcmp(buffer, "LOGIN") == 0)
         {
-            printf("%s", "Entered SEND \n");
-            mailerSend(current_socket, buffer, mailSpoolDirectory);
+            printf("%s", "Entered LOGIN \n");
+            user_authenticated = mailerLogon(current_socket, buffer);
         }
 
-        // Enter correct mailer function based on input
-        if (strcmp(buffer, "LIST") == 0)
+        if (!user_authenticated)
         {
-            printf("%s", "Entered LIST \n");
-            mailerList(current_socket, buffer, mailSpoolDirectory);
+            sendErr(current_socket);
         }
-
-        // Enter correct mailer function based on input
-        if (strcmp(buffer, "READ") == 0)
+        else
         {
-            printf("%s", "Entered READ \n");
-            mailerRead(current_socket, buffer, mailSpoolDirectory);
-        }
+            // Enter correct mailer function based on input
+            if (strcmp(buffer, "SEND") == 0)
+            {
+                printf("%s", "Entered SEND \n");
+                mailerSend(current_socket, buffer, mailSpoolDirectory);
+            }
 
-        // Enter correct mailer function based on input
-        if (strcmp(buffer, "DEL") == 0)
-        {
-            printf("%s", "Entered DEL \n");
-            mailerDel(current_socket, buffer, mailSpoolDirectory);
+            // Enter correct mailer function based on input
+            else if (strcmp(buffer, "LIST") == 0)
+            {
+                printf("%s", "Entered LIST \n");
+                mailerList(current_socket, buffer, mailSpoolDirectory);
+            }
+
+            // Enter correct mailer function based on input
+            else if (strcmp(buffer, "READ") == 0)
+            {
+                printf("%s", "Entered READ \n");
+                mailerRead(current_socket, buffer, mailSpoolDirectory);
+            }
+
+            // Enter correct mailer function based on input
+            else if (strcmp(buffer, "DEL") == 0)
+            {
+                printf("%s", "Entered DEL \n");
+                mailerDel(current_socket, buffer, mailSpoolDirectory);
+            }
         }
 
     } while (strcmp(buffer, "QUIT") != 0 && !abortRequested);

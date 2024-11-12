@@ -9,7 +9,7 @@ client: client.o
 	$(COMP) -o client client.o
 
 server: server.o
-	$(COMP) -o server server.o
+	$(COMP) -o server server.o -lldap
 
 client.o: client.c
 	$(COMP) $(COMPFLAGS) -c client.c
