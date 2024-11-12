@@ -224,7 +224,7 @@ void createDir(char *directoryName)
 }
 
 // function to handle mailer function list
-void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
+void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
     // Answer OK
     sendOk(current_socket);
@@ -274,7 +274,8 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
     int foundUsrInbox = 0;
     while ((entry = readdir(directory)) != NULL)
     {
-        if (strcmp(username, entry->d_name) == 0)
+        //if (strcmp(username, entry->d_name) == 0)
+        if (strcmp(userptr, entry->d_name) == 0)
         {
             foundUsrInbox = 1;
             break;
@@ -318,7 +319,8 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory)
         // create path to user inbox (.../mailSpool/username)
         strcpy(userFolder, mailSpoolDirectory);
         strcat(userFolder, "/");
-        strcat(userFolder, username);
+        //strcat(userFolder, username);
+        strcat(userFolder, userptr);
 
         // Check if fs access is available
         pthread_mutex_lock(mutex);
@@ -1010,7 +1012,8 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     return;
 }
 
-int mailerLogon(int *current_socket, char *buffer)
+// Handle user authentication procedure
+int mailerLogon(int *current_socket, char *buffer, char *userptr)
 {
     int size = 0;
 
@@ -1038,6 +1041,9 @@ int mailerLogon(int *current_socket, char *buffer)
 
     // make dynamic copy of username in buffer
     char *username = strdup(buffer);
+
+    // pass username back to client handler for further use
+    strcpy(userptr, username);
 
     // Answer OK
     sendOk(current_socket);
@@ -1090,6 +1096,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
 
     // flag for user auth
     int user_authenticated = 0;
+    char username[16];
 
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
@@ -1129,7 +1136,9 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
         if (strcmp(buffer, "LOGIN") == 0)
         {
             printf("%s", "Entered LOGIN \n");
-            user_authenticated = mailerLogon(current_socket, buffer);
+            user_authenticated = mailerLogon(current_socket, buffer, username);
+            //printf("name: %s", username);
+            // username is now also set!
         }
         else if (!user_authenticated)
         {
@@ -1149,7 +1158,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
             else if (strcmp(buffer, "LIST") == 0)
             {
                 printf("%s", "Entered LIST \n");
-                mailerList(current_socket, buffer, mailSpoolDirectory);
+                mailerList(current_socket, buffer, mailSpoolDirectory, username);
             }
 
             // Enter correct mailer function based on input
