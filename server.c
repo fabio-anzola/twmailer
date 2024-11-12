@@ -663,38 +663,19 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
 }
 
 // function to handle mailer function send
-void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
+void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
     // Answer OK
     sendOk(current_socket);
 
-    // Get Sender ID
-    int size = recv(*current_socket, buffer, BUF - 1, 0);
-    if (!checkError(size))
-    {
-        sendErr(current_socket);
-        return;
-    }
-
-    // sanitize message and 0 terminate it
-    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-    {
-        size -= 2;
-    }
-    else if (buffer[size - 1] == '\n')
-    {
-        --size;
-    }
-    buffer[size] = '\0';
-
     // make dynamic copy of  sender from buffer
-    char *sender = strdup(buffer); // dynamisch statt fixe groesse mit strcpy
+    char *sender = userptr;
 
     // Answer OK
     sendOk(current_socket);
 
     // Get Receiver ID
-    size = recv(*current_socket, buffer, BUF - 1, 0);
+    int size = recv(*current_socket, buffer, BUF - 1, 0);
     if (!checkError(size))
     {
         sendErr(current_socket);
@@ -808,7 +789,7 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory)
         // write msg into file descr
         fprintf(sbjFilePtr, "%s\n", buffer);
 
-    } while ((buffer[0] != '.') && (strlen(buffer) != 1));
+    } while (!((buffer[0] == '.') && (strlen(buffer) == 1)));
 
     // File ptr freigeben
     fclose(sbjFilePtr);
@@ -1130,7 +1111,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
         }
         buffer[size] = '\0';
 
-        // printf("Message received: %s\n", buffer); // ignore error
+        printf("Message received: %s\n", buffer); // ignore error
 
         // Enter correct mailer function based on input
         if (strcmp(buffer, "LOGIN") == 0)
@@ -1151,7 +1132,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
             if (strcmp(buffer, "SEND") == 0)
             {
                 printf("%s", "Entered SEND \n");
-                mailerSend(current_socket, buffer, mailSpoolDirectory);
+                mailerSend(current_socket, buffer, mailSpoolDirectory, username);
             }
 
             // Enter correct mailer function based on input
@@ -1173,6 +1154,10 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
             {
                 printf("%s", "Entered DEL \n");
                 mailerDel(current_socket, buffer, mailSpoolDirectory);
+            }
+
+            else {
+                sendErr(current_socket);
             }
         }
 

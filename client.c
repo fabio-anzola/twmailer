@@ -73,12 +73,12 @@ void mailerSend(int create_socket, char *buffer)
     // current input nr
     int input_rows = 0;
     // input needed for protocol
-    int msg_type_rows = 4;
+    int msg_type_rows = 3;
     do
     {
         if (input_rows < msg_type_rows)
         {
-            // wait for server repsonse (4) times
+            // wait for server repsonse (3) times
             size = recv(create_socket, buffer, BUF - 1, 0);
             if (checkError(size))
             {
@@ -453,35 +453,30 @@ int main(int argc, char *argv[])
 
             mailerLogin(create_socket, buffer);
         }
-
         else if (strcmp(buffer, "SEND") == 0)
         { // if user has entered SEND
             // SEND
 
             mailerSend(create_socket, buffer);
         }
-
         else if (strcmp(buffer, "LIST") == 0)
         {
             // LIST
 
             mailerList(create_socket, buffer);
         }
-
         else if (strcmp(buffer, "READ") == 0)
         {
             // READ
 
             mailerRead(create_socket, buffer);
         }
-
         else if (strcmp(buffer, "DEL") == 0)
         {
             // DEL
 
             mailerDel(create_socket, buffer);
         }
-
         // If entered string is QUIT then quit and close descriptors
         else if (strcmp(buffer, "QUIT") == 0)
         {
