@@ -99,7 +99,7 @@ void mailerSend(int create_socket, char *buffer)
         }
         input_rows++;
         buffer[size] = '\0';
-    } while ((buffer[0] != '.') && (strlen(buffer) != 1));
+    } while (!((buffer[0] == '.') && (strlen(buffer) == 1)));
 
     // Get server answer
     size = recv(create_socket, buffer, BUF - 1, 0);
