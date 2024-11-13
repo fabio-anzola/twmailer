@@ -227,29 +227,7 @@ void createDir(char *directoryName)
 void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
     // Answer OK
-    sendOk(current_socket);
-
-    // Get User ID
-    int size = recv(*current_socket, buffer, BUF - 1, 0);
-    if (!checkError(size))
-    {
-        sendErr(current_socket);
-        return;
-    }
-
-    // Clean msg from rn and 0 terminate
-    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-    {
-        size -= 2;
-    }
-    else if (buffer[size - 1] == '\n')
-    {
-        --size;
-    }
-    buffer[size] = '\0';
-
-    // Make dynamic copy of buffer for username
-    char *username = strdup(buffer);
+    //sendOk(current_socket);
 
     // Check if fs access is available
     pthread_mutex_lock(mutex);
@@ -264,7 +242,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     {
         perror("Error opening directory");
         sendErr(current_socket);
-        free(username);
         // Unlock mutex
         pthread_mutex_unlock(mutex);
         return;
@@ -287,7 +264,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     {
         printf("%s\n", "Error closing directory");
         sendErr(current_socket);
-        free(username);
         // Unlock mutex
         pthread_mutex_unlock(mutex);
         return;
@@ -301,7 +277,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
         if (send(*current_socket, "0", 3, 0) == -1)
         {
             perror("send answer failed");
-            free(username);
             return;
         }
     }
@@ -319,7 +294,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
         // create path to user inbox (.../mailSpool/username)
         strcpy(userFolder, mailSpoolDirectory);
         strcat(userFolder, "/");
-        //strcat(userFolder, username);
         strcat(userFolder, userptr);
 
         // Check if fs access is available
@@ -332,7 +306,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
         if (directory == NULL)
         {
             perror("Error opening directory");
-            free(username);
             // Unlock mutex
             pthread_mutex_unlock(mutex);
         }
@@ -362,7 +335,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
         if (closedir(directory) == -1)
         {
             printf("%s\n", "Error closing directory");
-            free(username);
             // Unlock mutex
             pthread_mutex_unlock(mutex);
             return;
@@ -380,7 +352,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
         if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
         {
             perror("send answer failed");
-            free(username);
             // Unlock mutex
             pthread_mutex_unlock(mutex);
             return;
@@ -388,7 +359,6 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     }
 
     // Free dynamic copy for username
-    free(username);
     return;
 }
 
