@@ -150,25 +150,6 @@ void mailerRead(int create_socket, char *buffer)
         }
     }
 
-    // send user message to server (username)
-    if (socketUserMsgSend(buffer, create_socket))
-    {
-        perror("send error");
-        return;
-    }
-
-    // get message from server - OK
-    size = recv(create_socket, buffer, BUF - 1, 0);
-    if (checkError(size))
-    {
-        buffer[size] = '\0';
-        printf("<< %s\n", buffer); // Ok or ERR
-        if (strcmp(buffer, "ERR") == 0)
-        {
-            return;
-        }
-    }
-
     // Write msg to server (message nr)
     if (socketUserMsgSend(buffer, create_socket))
     {

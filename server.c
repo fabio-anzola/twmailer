@@ -363,33 +363,8 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
 }
 
 // function to handle mailer function read
-void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
+void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
-    // Answer OK
-    sendOk(current_socket);
-
-    // Get User ID
-    int size = recv(*current_socket, buffer, BUF - 1, 0);
-    if (!checkError(size))
-    {
-        sendErr(current_socket);
-        return;
-    }
-
-    // sanitize message ending and 0 terminate
-    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-    {
-        size -= 2;
-    }
-    else if (buffer[size - 1] == '\n')
-    {
-        --size;
-    }
-    buffer[size] = '\0';
-
-    // create dynamic copy of username (in buffer)
-    char *username = strdup(buffer);
-
     // prepare directory for message read
     DIR *directory;
     struct dirent *entry;
@@ -404,7 +379,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
     if (directory == NULL)
     {
         perror("Error opening directory");
-        free(username);
         sendErr(current_socket);
         // Unlock mutex
         pthread_mutex_unlock(mutex);
@@ -415,7 +389,7 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
     int foundUsrInbox = 0;
     while ((entry = readdir(directory)) != NULL)
     {
-        if (strcmp(username, entry->d_name) == 0)
+        if (strcmp(userptr, entry->d_name) == 0)
         {
             foundUsrInbox = 1;
             break;
@@ -426,7 +400,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
     if (closedir(directory) == -1)
     {
         printf("%s\n", "Error closing directory");
-        free(username);
         sendErr(current_socket);
         // Unlock mutex
         pthread_mutex_unlock(mutex);
@@ -446,10 +419,9 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         sendOk(current_socket);
 
         // Get Message ID
-        size = recv(*current_socket, buffer, BUF - 1, 0);
+        int size = recv(*current_socket, buffer, BUF - 1, 0);
         if (!checkError(size))
         {
-            free(username);
             sendErr(current_socket);
             return;
         }
@@ -478,7 +450,7 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
 
         // contruct mesage path (.../mailSpool/username/)
         strcat(userFolder, mailSpoolDirectory);
-        strcat(userFolder, username);
+        strcat(userFolder, userptr);
         strcat(userFolder, "/");
 
         // Check if fs access is available
@@ -491,7 +463,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         if (directory == NULL)
         {
             perror("Error oppening directory");
-            free(username);
             free(messageid);
             sendErr(current_socket);
             // Unlock mutex
@@ -521,7 +492,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         if (closedir(directory) == -1)
         {
             printf("%s\n", "Error closing directory");
-            free(username);
             free(messageid);
             sendErr(current_socket);
             // Unlock mutex
@@ -545,7 +515,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
             if (file == NULL)
             {
                 printf("%s\n", "Error opening message ");
-                free(username);
                 free(messageid);
                 sendErr(current_socket);
                 // Unlock mutex
@@ -567,7 +536,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 perror("Temp buffer alloc failed");
                 free(f_buffer);
                 fclose(file);
-                free(username);
                 free(messageid);
                 sendErr(current_socket);
                 // Unlock mutex
@@ -587,7 +555,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 perror("File could not be read");
                 free(f_buffer);
                 fclose(file);
-                free(username);
                 free(messageid);
                 sendErr(current_socket);
                 // Unlock mutex
@@ -604,7 +571,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
                 perror("send answer failed");
                 free(f_buffer);
                 fclose(file);
-                free(username);
                 free(messageid);
                 // Unlock mutex
                 pthread_mutex_unlock(mutex);
@@ -627,8 +593,6 @@ void mailerRead(int *current_socket, char *buffer, char *mailSpoolDirectory)
         free(messageid);
     }
 
-    // finally free danymic copy for usernameid
-    free(username);
     return;
 }
 
@@ -1116,7 +1080,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
             else if (strcmp(buffer, "READ") == 0)
             {
                 printf("%s", "Entered READ \n");
-                mailerRead(current_socket, buffer, mailSpoolDirectory);
+                mailerRead(current_socket, buffer, mailSpoolDirectory, username);
             }
 
             // Enter correct mailer function based on input
