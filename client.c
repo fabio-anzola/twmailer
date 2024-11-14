@@ -190,25 +190,6 @@ void mailerDel(int create_socket, char *buffer)
         }
     }
 
-    // send msg to server - username
-    if (socketUserMsgSend(buffer, create_socket))
-    {
-        perror("send error");
-        return;
-    }
-
-    // get answer from server - OK
-    size = recv(create_socket, buffer, BUF - 1, 0);
-    if (checkError(size))
-    {
-        buffer[size] = '\0';
-        printf("<< %s\n", buffer); // Ok or ERR
-        if (strcmp(buffer, "ERR") == 0)
-        {
-            return;
-        }
-    }
-
     // send msg to server - msg nr
     if (socketUserMsgSend(buffer, create_socket))
     {

@@ -57,6 +57,8 @@ void sendOk(int *current_socket)
 // Ldap authentication here
 int checkUserLogon(char ldapUser[128], char ldapPasswd[128]) // ldapuser=if24b001 ldappasswd=s3cret
 {
+    // return 0; // enable for developemnt
+    
     // Setup var for ldap handle
     LDAP *ldap_handle;
 
@@ -743,32 +745,10 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
 }
 
 // function to handle mailer function del
-void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
+void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
     // Answer OK
     sendOk(current_socket);
-
-    // Get User ID
-    int size = recv(*current_socket, buffer, BUF - 1, 0);
-    if (!checkError(size))
-    {
-        sendErr(current_socket);
-        return;
-    }
-
-    // sanitize msg and 0 terminate
-    if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-    {
-        size -= 2;
-    }
-    else if (buffer[size - 1] == '\n')
-    {
-        --size;
-    }
-    buffer[size] = '\0';
-
-    // make dynamic copy of username in buffer
-    char *username = strdup(buffer);
 
     // prep ars to open mail spool
     DIR *directory;
@@ -784,7 +764,6 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     if (directory == NULL)
     {
         perror("Error opening directory");
-        free(username);
         sendErr(current_socket);
         // Unlock mutex
         pthread_mutex_unlock(mutex);
@@ -795,7 +774,7 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     int foundUsrInbox = 0;
     while ((entry = readdir(directory)) != NULL)
     {
-        if (strcmp(username, entry->d_name) == 0)
+        if (strcmp(userptr, entry->d_name) == 0)
         {
             foundUsrInbox = 1;
             break;
@@ -806,7 +785,6 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     if (closedir(directory) == -1)
     {
         perror("Error closing directory");
-        free(username);
         sendErr(current_socket);
         // Unlock mutex
         pthread_mutex_unlock(mutex);
@@ -826,10 +804,9 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         sendOk(current_socket);
 
         // Get Message ID
-        size = recv(*current_socket, buffer, BUF - 1, 0);
+        int size = recv(*current_socket, buffer, BUF - 1, 0);
         if (!checkError(size))
         {
-            free(username);
             return;
         }
 
@@ -855,7 +832,7 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         char userFolder[PATH_MAX];
         strcpy(userFolder, mailSpoolDirectory);
         strcat(userFolder, "/");
-        strcat(userFolder, username);
+        strcat(userFolder, userptr);
         strcat(userFolder, "/");
 
         // Check if fs access is available
@@ -869,7 +846,6 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         {
             perror("Error opening directory");
             sendErr(current_socket);
-            free(username);
             free(messageid);
             // Unlock mutex
             pthread_mutex_unlock(mutex);
@@ -907,7 +883,6 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
         if (closedir(directory) == -1)
         {
             perror("Error closing directory");
-            free(username);
             free(messageid);
             sendErr(current_socket);
             // Unlock mutex
@@ -923,7 +898,6 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory)
     }
 
     // Free dynam alloc username
-    free(username);
     return;
 }
 
@@ -1087,7 +1061,7 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
             else if (strcmp(buffer, "DEL") == 0)
             {
                 printf("%s", "Entered DEL \n");
-                mailerDel(current_socket, buffer, mailSpoolDirectory);
+                mailerDel(current_socket, buffer, mailSpoolDirectory, username);
             }
 
             else {
