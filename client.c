@@ -38,11 +38,13 @@ char userInput(char buffer[BUF])
 // function to check socket recv for error based on size
 int checkError(int size)
 {
+    // error if size is set to negative
     if (size == -1)
     {
         perror("recv error");
         return 0;
     }
+    // if size not negative but zero then no connection anymore
     else if (size == 0)
     {
         printf("Server closed remote socket\n"); // ignore error
@@ -59,9 +61,12 @@ int socketUserMsgSend(char buffer[BUF], int socket)
     userInput(buffer);
     int size = strlen(buffer);
     // send user in via socket
+    // if input is more than zeor (not only "enter") send to server
     if (size != 0) {
+        // return 0 if no issue or 1 for error
         return ((send(socket, buffer, size, 0)) == -1);
     }
+    // if nothing sent to server return error code 0
     return 0;
 }
 
@@ -76,6 +81,10 @@ void mailerSend(int create_socket, char *buffer)
     int msg_type_rows = 3;
     do
     {
+        // practically expect 3 responses from server
+        // 1 - OK for intitial command
+        // 2 - OK for receiver name
+        // 3 - OK for subject name
         if (input_rows < msg_type_rows)
         {
             // wait for server repsonse (3) times
@@ -91,7 +100,7 @@ void mailerSend(int create_socket, char *buffer)
             }
         }
 
-        // After each server respone send answer -> last interation message!
+        // After each server respone send answer -> last interation is message!
         if (socketUserMsgSend(buffer, create_socket))
         {
             perror("send error");
@@ -101,7 +110,7 @@ void mailerSend(int create_socket, char *buffer)
         buffer[size] = '\0';
     } while (!((buffer[0] == '.') && (strlen(buffer) == 1)));
 
-    // Get server answer
+    // Get server answer to message 
     size = recv(create_socket, buffer, BUF - 1, 0);
     if (checkError(size))
     {
@@ -254,11 +263,9 @@ void mailerLogin(int create_socket, char *buffer)
     strncpy(passBuf, getpass("Enter password: "), sizeof(passBuf) - 1);
     passBuf[sizeof(passBuf) - 1] = '\0';
     size = strlen(passBuf);
-    int msgCode = -99;
-    // send user passwd via socket
-    msgCode = ((send(create_socket, passBuf, size, 0)) == -1);
 
-    if (msgCode)
+    // send user passwd via socket
+    if (((send(create_socket, passBuf, size, 0)) == -1))
     {
         perror("send error");
         return;
@@ -372,9 +379,6 @@ int main(int argc, char *argv[])
 
         //////////////////////////////////////////////////////////////////////
 
-        // userInput(buffer);
-        // size = strlen(buffer);
-        // if ((send(create_socket, buffer, size, 0)) == -1)
         // Send command to server
         if (socketUserMsgSend(buffer, create_socket))
         {
