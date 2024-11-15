@@ -948,9 +948,6 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
 // function to handle mailer function del
 void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
-    // Answer OK
-    sendOk(current_socket);
-
     // prep ars to open mail spool
     DIR *directory;
     struct dirent *entry;
@@ -1003,7 +1000,6 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory, char
     else
     {
         sendOk(current_socket);
-
         // Get Message ID
         int size = recv(*current_socket, buffer, BUF - 1, 0);
         if (!checkError(size))
