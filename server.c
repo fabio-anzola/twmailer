@@ -17,6 +17,8 @@
 #define LDAP_DEPRECATED 1
 #include <ldap.h>
 #include <lber.h>
+#include <openssl/sha.h>
+#include <time.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -31,6 +33,215 @@ int create_socket = -1;
 int new_socket = -1;
 
 pthread_mutex_t *mutex;
+
+///////////////////////////////////////////////////////////////////////////////
+
+const char BLACKLIST[PATH_MAX] = "./.blacklist.txt";
+
+// Generated sha256 hash from username and ip addr
+char *generate_hash(char *user, char *addr)
+{
+    static char hash[65]; // Buffer to store the resulting SHA256 hash as a string
+    unsigned char digest[SHA256_DIGEST_LENGTH];
+    char input[512]; // Buffer to store concatenated input
+
+    // Concatenate the input strings
+    snprintf(input, sizeof(input), "%s%s", user, addr);
+
+    // Compute the SHA256 hash
+    SHA256((unsigned char *)input, strlen(input), digest);
+
+    // Convert the SHA256 hash to a hexadecimal string
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+    {
+        sprintf(&hash[i * 2], "%02x", digest[i]);
+    }
+
+    return hash;
+}
+
+int checkBlacklist(char *user, char *addr)
+{
+    // get current timestamp
+    time_t now = time(NULL);
+
+    // gen referance hash of user and addr
+    char *hash = generate_hash(user, addr);
+
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
+    // open blacklist file
+    FILE *file = fopen(BLACKLIST, "r");
+
+    if (file == NULL)
+    {
+        perror("Error opening file");
+        fclose(file);
+        pthread_mutex_unlock(mutex);
+        exit(EXIT_FAILURE);
+        return 1;
+    }
+
+    // Buffer to store line (line by line)
+    char line[256];
+
+    // Var to store nr of attempts by above hash
+    int nr_of_attempts = 0;
+
+    // Var to store time of latest attempt
+    time_t last_attempt = 0;
+
+    // loop thorugh lines of Blacklist
+    while (fgets(line, sizeof(line), file))
+    {
+        // Remove the newline character at the end of the line and null terminate it
+        char *newline = strchr(line, '\n');
+        if (newline)
+        {
+            *newline = '\0';
+        }
+
+        // Cut line at '#'
+        // part1 is hash
+        // part2 is time
+        // Use a temporary pointer to pass to strsep (as it needs double ptr)
+        char *temp = line;                // temp points to line
+        char *part1 = strsep(&temp, "#"); // strsep splits the string at #
+        char *part2 = temp;               // temp now points to the remaining part
+
+        // if line is eual to rference hash
+        if (strcmp(part1, hash) == 0)
+        {
+            // Convert part2 to time_t
+            char *endptr; // used for error check
+            time_t stored_time = (time_t)strtoll(part2, &endptr, 10);
+
+            // Check if the conversion was successful
+            if (*endptr != '\0')
+            {
+                printf("Invalid timestamp: %s\n", part2);
+                exit(EXIT_FAILURE);
+            }
+
+            // Increase nr of attepts by one
+            nr_of_attempts++;
+
+            // Check if this line shows more current event than already ssen
+            if (difftime(stored_time, last_attempt) > 0)
+            {
+                last_attempt = stored_time;
+            }
+        }
+    }
+
+    fclose(file);                // Close the file
+    pthread_mutex_unlock(mutex); // realse fs
+
+    // check if more than 3 attempts have been made
+    if (nr_of_attempts >= 3)
+    {
+        // check if 60s have passed since last attempt
+        if (difftime(now, last_attempt) < 60)
+        {
+            // blacklisted for 60s!
+            return 1;
+        }
+    }
+
+    return 0; // not blacklisted
+}
+
+void addLoginAttempt(char *user, char *addr)
+{
+    // get current epoch time
+    time_t now = time(NULL);
+
+    // generate hash of user + ip
+    char *hash = generate_hash(user, addr);
+
+    FILE *sbjFilePtr;
+
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
+    // open blacklist file
+    sbjFilePtr = fopen(BLACKLIST, "a");
+    if (!sbjFilePtr)
+    {
+        perror("Failed to open blacklist file");
+        pthread_mutex_unlock(mutex);
+        return;
+    }
+
+    // Write hash + current time into blacklist
+    fprintf(sbjFilePtr, "%s#%ld\n", hash, now);
+    fclose(sbjFilePtr);
+
+    pthread_mutex_unlock(mutex);
+}
+
+void removeLoginAttempt(char *user, char *addr)
+{
+    // generate hash of user + ip
+    char *hash = generate_hash(user, addr);
+
+    FILE *blacklistPtr;
+    FILE *tempFilePtr;
+
+    // Check if fs access is available
+    pthread_mutex_lock(mutex);
+
+    blacklistPtr = fopen(BLACKLIST, "r");
+    if (!blacklistPtr)
+    {
+        perror("Failed to open blacklist file");
+        pthread_mutex_unlock(mutex);
+        return;
+    }
+
+    tempFilePtr = fopen("./.blacklist_temp.txt", "w");
+    if (!tempFilePtr)
+    {
+        perror("Failed to open temporary blacklist file");
+        fclose(tempFilePtr);
+        pthread_mutex_unlock(mutex);
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), blacklistPtr))
+    {
+        // Remove trailing newline, if any
+        char *newline = strchr(line, '\n');
+        if (newline)
+        {
+            *newline = '\0';
+        }
+
+        // Check if the line contains the hash
+        if (strstr(line, hash) == NULL) // null if not found or first pos if found
+        {
+            // hash not found -> write to temp file
+            fprintf(tempFilePtr, "%s\n", line);
+        }
+    }
+
+    // Close both files
+    fclose(blacklistPtr);
+    fclose(tempFilePtr);
+
+    if (remove(BLACKLIST) != 0)
+    {
+        perror("Failed to remove original blacklist file");
+    }
+    else if (rename("./.blacklist_temp.txt", BLACKLIST) != 0)
+    {
+        perror("Failed to rename temporary file");
+    }
+
+    pthread_mutex_unlock(mutex);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -58,7 +269,7 @@ void sendOk(int *current_socket)
 int checkUserLogon(char ldapUser[128], char ldapPasswd[128]) // ldapuser=if24b001 ldappasswd=s3cret
 {
     // return 0; // enable for developemnt
-    
+
     // Setup var for ldap handle
     LDAP *ldap_handle;
 
@@ -229,7 +440,7 @@ void createDir(char *directoryName)
 void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, char *userptr)
 {
     // Answer OK
-    //sendOk(current_socket);
+    // sendOk(current_socket);
 
     // Check if fs access is available
     pthread_mutex_lock(mutex);
@@ -253,7 +464,7 @@ void mailerList(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     int foundUsrInbox = 0;
     while ((entry = readdir(directory)) != NULL)
     {
-        //if (strcmp(username, entry->d_name) == 0)
+        // if (strcmp(username, entry->d_name) == 0)
         if (strcmp(userptr, entry->d_name) == 0)
         {
             foundUsrInbox = 1;
@@ -604,18 +815,11 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     // Answer OK
     sendOk(current_socket);
 
-    // make dynamic copy of  sender from buffer
-    char *sender = userptr;
-
-    // Answer OK
-    sendOk(current_socket);
-
     // Get Receiver ID
     int size = recv(*current_socket, buffer, BUF - 1, 0);
     if (!checkError(size))
     {
         sendErr(current_socket);
-        free(sender);
         return;
     }
 
@@ -656,7 +860,6 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
 
     if (!checkError(size))
     {
-        free(sender);
         free(receiver);
         sendErr(current_socket);
         return;
@@ -692,7 +895,7 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     sbjFilePtr = fopen(receiverDir, "w");
 
     // Write header with sender name
-    fprintf(sbjFilePtr, "# Message by %s:\n\n", sender);
+    fprintf(sbjFilePtr, "# Message by %s:\n\n", userptr);
 
     // Get Message
     // TODO: Could write into temp buffer so mutex doesnt stay locked for too long
@@ -701,7 +904,6 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
         size = recv(*current_socket, buffer, BUF - 1, 0);
         if (!checkError(size))
         {
-            free(sender);
             free(receiver);
             free(subject);
             fclose(sbjFilePtr);
@@ -737,7 +939,6 @@ void mailerSend(int *current_socket, char *buffer, char *mailSpoolDirectory, cha
     sendOk(current_socket);
 
     // Danymische kopien freigeben
-    free(sender);
     free(receiver);
     free(subject);
 
@@ -902,7 +1103,7 @@ void mailerDel(int *current_socket, char *buffer, char *mailSpoolDirectory, char
 }
 
 // Handle user authentication procedure
-int mailerLogon(int *current_socket, char *buffer, char *userptr)
+int mailerLogon(int *current_socket, char *buffer, char *userptr, char *addr)
 {
     int size = 0;
 
@@ -933,6 +1134,14 @@ int mailerLogon(int *current_socket, char *buffer, char *userptr)
 
     // pass username back to client handler for further use
     strcpy(userptr, username);
+
+    // check for blacklisted
+    if (checkBlacklist(username, addr))
+    {
+        free(username);
+        sendErr(current_socket);
+        return 0;
+    }
 
     // Answer OK
     sendOk(current_socket);
@@ -976,7 +1185,7 @@ int mailerLogon(int *current_socket, char *buffer, char *userptr)
 }
 
 // function to handle client communication and call mailer funcs
-void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
+void *clientCommunication(int *current_socket, char *mailSpoolDirectory, char *cliAddr)
 {
     // initialize communications vars
     char buffer[BUF];
@@ -1025,9 +1234,17 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
         if (strcmp(buffer, "LOGIN") == 0)
         {
             printf("%s", "Entered LOGIN \n");
-            user_authenticated = mailerLogon(current_socket, buffer, username);
-            //printf("name: %s", username);
-            // username is now also set!
+            user_authenticated = mailerLogon(current_socket, buffer, username, cliAddr); //  username is now also set!
+            // If not sucessful
+            if (!user_authenticated)
+            {
+                // Add login attempt
+                addLoginAttempt(username, cliAddr);
+            }
+            else
+            {
+                removeLoginAttempt(username, cliAddr);
+            }
         }
         else if (!user_authenticated)
         {
@@ -1064,7 +1281,8 @@ void *clientCommunication(int *current_socket, char *mailSpoolDirectory)
                 mailerDel(current_socket, buffer, mailSpoolDirectory, username);
             }
 
-            else {
+            else
+            {
                 sendErr(current_socket);
             }
         }
@@ -1250,7 +1468,7 @@ int main(int argc, char *argv[])
         {
             // Child process
             close(create_socket); // child does not need listening socket
-            clientCommunication(&new_socket, mailSpoolDirectory);
+            clientCommunication(&new_socket, mailSpoolDirectory, inet_ntoa(cliaddress.sin_addr));
             close(new_socket);
             exit(EXIT_SUCCESS); // exit child process
         }
